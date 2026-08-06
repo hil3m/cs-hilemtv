@@ -1,0 +1,51 @@
+name: Build CloudStream provider
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+
+      - name: Build .cs3
+        run: gradle HilemTVProvider:make --stacktrace
+
+      - name: Prepare repository files
+        shell: bash
+        run: |
+          set -euo pipefail
+          CS3="$(find . -type f -name '*.cs3' | head -n 1)"
+          test -n "$CS3"
+          mkdir -p dist/cloudstream
+          python3 scripts/publish_to_site.py "$CS3" dist/cloudstream
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(
+              Path("dist/cloudstream/plugins.json").read_text(encoding="utf-8")
+          )
+          version = manifest[0]["version"]
+          print(f"Generated plugin version: {version}")
+          if version != 13:
+              raise SystemExit(f"Unexpected plugin version: {version}; expected 13")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hilemtv-cloudstream-release
+          path: dist/cloudstream/
+          if-no-files-found: error
